@@ -4,6 +4,7 @@ import random
 import sys
 import time
 import pygame as pg
+from math import degrees, atan2
 
 
 WIDTH = 1100  # ゲームウィンドウの幅
@@ -241,6 +242,56 @@ class Score:
         self.image = self.font.render(f"Score: {self.value}", 0, self.color)
         screen.blit(self.image, self.rect)
 
+class Shield(pg.sprite.Sprite):
+    """
+    防御壁に関するクラス
+    """
+    def __init__(self, bird: Bird, life: int = 400):
+        super().__init__()
+        self.life = life
+
+        # シールド太さと長さ
+        thickness = 12
+        length = bird.rect.height * 2
+
+        # 正方形キャンバス
+        size = length
+        base = pg.Surface((size, size), pg.SRCALPHA)
+
+        # 中央に縦棒を描画
+        rect = pg.Rect(0, 0, thickness, length)
+        rect.center = (size // 2, size // 2)
+        pg.draw.rect(base, (0, 0, 255, 180), rect)
+
+        # 角度を鳥の向きに合わせる
+        vx, vy = bird.dire
+        angle = degrees(atan2(-vy, vx))
+        self.image = pg.transform.rotate(base, angle)
+
+        # シールド位置（固定）
+        self.rect = self.image.get_rect()
+        offset = pg.Vector2(vx, vy) * (bird.rect.width + 10)
+        self.rect.center = bird.rect.center + offset
+
+        self.mask = pg.mask.from_surface(self.image)
+
+    def collide_with_bomb(self, bomb: pg.sprite.Sprite) -> bool:
+        """
+        爆弾がシールドの青い棒に当たったか判定
+        """
+        # 爆弾のマスク（円）
+        bomb_mask = pg.mask.from_surface(bomb.image)
+        offset = (bomb.rect.left - self.rect.left, bomb.rect.top - self.rect.top)
+        if self.mask.overlap(bomb_mask, offset):
+            return True
+        return False
+        
+    def update(self):
+        self.life -= 1
+        if self.life < 0:
+            self.kill()
+
+
 
 def main():
     pg.display.set_caption("真！こうかとん無双")
@@ -253,6 +304,7 @@ def main():
     beams = pg.sprite.Group()
     exps = pg.sprite.Group()
     emys = pg.sprite.Group()
+    shields = pg.sprite.Group()
 
     tmr = 0
     clock = pg.time.Clock()
@@ -263,6 +315,11 @@ def main():
                 return 0
             if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
                 beams.add(Beam(bird))
+        
+        if key_lst[pg.K_s] and score.value >= 50 and len(shields) == 0:  # sキー押下、スコア50以上、他の壁が存在しない時
+            score.value -= 50
+            shields.add(Shield(bird))
+
         screen.blit(bg_img, [0, 0])
 
         if tmr%200 == 0:  # 200フレームに1回，敵機を出現させる
@@ -282,6 +339,12 @@ def main():
             exps.add(Explosion(bomb, 50))  # 爆発エフェクト
             score.value += 1  # 1点アップ
 
+        for shield in shields:
+            for bomb in list(bombs):
+                if shield.collide_with_bomb(bomb):
+                    exps.add(Explosion(bomb, 50))  # 爆発エフェクト
+                    bomb.kill()  # 爆弾を消す
+
         for bomb in pg.sprite.spritecollide(bird, bombs, True):  # こうかとんと衝突した爆弾リスト
             bird.change_img(8, screen)  # こうかとん悲しみエフェクト
             score.update(screen)
@@ -298,6 +361,8 @@ def main():
         bombs.draw(screen)
         exps.update()
         exps.draw(screen)
+        shields.update()
+        shields.draw(screen)
         score.update(screen)
         pg.display.update()
         tmr += 1
